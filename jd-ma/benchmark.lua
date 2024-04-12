@@ -82,7 +82,7 @@ function units.parseBool(bool, default, error)
 end
 
 
-local function parse_rate(rstring, psize)
+function option.parse_rate(rstring, psize)
         local num, unit, time = string.match(rstring, "^(%d+%.?%d*)(%a*)/?(%a*)$")
         if not num then
                 return nil, "Invalid format. Should be '<number>[unit][/<time>]'."

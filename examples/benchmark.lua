@@ -11,6 +11,7 @@ local log    = require "log"
 local dpdkc   = require "dpdkc"
 local limiter = require "software-ratecontrol"
 local timer = require "timer"
+local inspect = require('inspect')
 
 -- set addresses here
 local DST_MAC		= "f8:f2:1e:46:2c:f0" -- resolved via ARP on GW_IP or DST_IP, can be overriden with a string here
@@ -124,6 +125,9 @@ function master(args)
 	log:warn("%s", rate)
 	--stats.startStatsTask{txDevices = {txDev}}
 	
+	-- Start Counter Thread first to not miss any packets.
+	mg.startTask("ctrSlave", txDev, rxDev, args.time)
+	
 	-- Create Rate-limiters for each thread!
 	-- Since the hardware-rate-limiter fails for small packet rates, we will use a sofware-ratelimiter for these. 
 	for i = 1, args.threads do
@@ -141,7 +145,6 @@ function master(args)
 		mg.startTask("loadSlave", txQueue, rxDev, args.size, args.flows, args.time)
 	end
 
-	mg.startTask("ctrSlave", txDev, rxDev, args.time)
 	mg.startTask("timerSlave", txDev:getTxQueue( 2 ), rxDev:getRxQueue( 2 ), args.size, args.flows, args.time)
 	--arp.startArpTask{
 	--	-- run ARP on both ports
@@ -184,13 +187,22 @@ function ctrSlave(txDev, rxDev, time)
         if ( time > 0 ) then
                 runtime = timer:new(time)
         end
-	
+	mg.sleepMillis(250)
 	while mg.running() and (not runtime or runtime:running()) do
-		rxCtr:update()
 		txCtr:update()
+		rxCtr:update()
 	end
-	rxCtr:finalize()
-	txCtr:finalize()
+	mg.sleepMillis(250)
+	-- Wait for any packets in transit. 
+	txCtr:finalize(500)
+	rxCtr:finalize(500)
+	-- Get latest stats
+	_, _, _, rxStats = rxCtr:getStats()
+	_, _, _, txStats = txCtr:getStats()
+	if rxStats < txStats then
+		log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", rxStats, txStats, (txStats - rxStats), (txStats - rxStats)/txStats*100)
+
+	end
 
 end
 

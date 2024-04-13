@@ -56,49 +56,62 @@ function log(file, msg, linebreak)
     end
 end
 
-function master()
-    local arguments = utils.parseArguments(arg)
-    local txPort, rxPort = arguments.txport, arguments.rxport
-    if not txPort or not rxPort then
-        return print("usage: " .. usageString)
-    end
+function configure(parser)
+	parser:description("Generates UDP traffic and measure latencies. Edit the source to modify constants like IPs.")
+	parser:argument("txPort", "Device to transmit from."):convert(tonumber)
+	parser:argument("rxPort", "Device to receive from."):convert(tonumber)
+	parser:option("--rateThreshold", "<throughput rate threshold>"):default(100):convert(tonumber)
+	parser:option("--btbThreshold", "Back to Back Threshold"):default(100):convert(tonumber)
+	parser:option("--duration", "single test duration"):default(60):convert(tonumber)
+	parser:option("--maxLossRate", "Max Lossrate"):default(1):convert(tonumber)
+	parser:option("--dskip", "Skip dut Configuration"):default(true)
+	parser:option("--numIterations", "amount of test iterations"):default(1):convert(tonumber)
+	parser:option("--sshpass", "SSH-password"):default("123"):convert(tostring)
+	parser:option("--asksshpass", "Ask for pass if needed"):default(true)
+	parser:option("--sshuser", "ssh username"):default("cff29"):convert(tostring)
+	parser:option("--sshport", "SSH-port"):default(22):convert(tonumber)
+	parser:option("--snmpComm", "snmp-community"):default("default"):convert(tostring)
+	parser:option("--asksnmpcomm", "Ask for snmp-community if needed"):default(true)
+	parser:option("--din", "DUT in interface name"):default("DIn"):convert(tostring)
+	parser:option("--dout", "DUT out interface name"):default("DOut"):convert(tostring) 
+	parser:option("--host", "Hostname"):default("Trafficgen"):convert(tostring) 
+
+end
+
+function master(args)
+
+    local txPort, rxPort = args.txPort, args.rxPort
     
-    local rateThreshold = arguments.rths or 100
-    local btbThreshold = arguments.bths or 100
-    local duration = arguments.duration or 10
-    local maxLossRate = arguments.mlr or 0.001
-    local dskip = arguments.dskip
-    local numIterations = arguments.iterations
-    
-    if type(arguments.sshpass) == "string" then
-        conf.setSSHPass(arguments.sshpass)
-    elseif arguments.asksshpass == "true" then
+    local rateThreshold = args.rateThreshold
+    local btbThreshold  = args.btbThreshold
+    local duration = args.duration
+    local maxLossRate = args.maxLossRate
+    local dskip = args.dskip
+    local numIterations = args.iterations
+   
+    if args.asksshpass == "true" then
         io.write("password: ")
         conf.setSSHPass(io.read())
+        
+    else
+        conf.setSSHPass(args.sshpass)
     end
-    if type(arguments.sshuser) == "string" then
-        conf.setSSHUser(arguments.sshuser)
-    end
-    if type(arguments.sshport) == "string" then
-        conf.setSSHPort(tonumber(arguments.sshport))
-    elseif type(arguments.sshport) == "number" then
-        conf.setSSHPort(arguments.sshport)
-    end
+
+    conf.setSSHUser(args.sshuser)
+    conf.setSSHPort(args.sshport)
     
-    if type(arguments.snmpcomm) == "string" then
-        conf.setSNMPComm(arguments.snmpcomm)
-    elseif arguments.asksnmpcomm == "true" then
-        io.write("snmp community: ")
+    if args.asksnmpcomm == "true" then
+        io.write("snmpcom ")
         conf.setSNMPComm(io.read())
-    end
+    else
+        conf.setSNMPComm(args.snmpcomm)
+    end 
     
-    if type(arguments.host) == "string" then
-        conf.setHost(arguments.host)
-    end
+    conf.setHost(args.host)
     
     local dut = {
-        ifIn = arguments.din,
-        ifOut = arguments.dout
+        ifIn = args.din,
+        ifOut = args.dout
     }
     
     local rxDev, txDev

@@ -126,7 +126,7 @@ function benchmark:bench(frameSize, maxLossRate)
 
     local maxLinkRate = self.txQueues[1].dev:getLinkStatus().speed
     local rateMulti = 1
-    local bar = barrier.new(2)
+    local bar = barrier:new(2)
     local results = {}
     local port = UDP_PORT
     local lastNoLostFrame = false

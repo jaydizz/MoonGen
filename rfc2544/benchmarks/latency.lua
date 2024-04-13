@@ -131,7 +131,7 @@ function benchmark:bench(frameSize, rate)
     end
 
     local maxLinkRate = self.txQueues[1].dev:getLinkStatus().speed
-    local bar = barrier.new(0)
+    local bar = barrier:new(0)
     local port = UDP_PORT
     
     -- workaround for rate bug

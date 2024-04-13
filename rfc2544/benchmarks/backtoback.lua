@@ -144,7 +144,7 @@ function benchmark:bench(frameSize)
     end
     
     local port = UDP_PORT
-    local bar = barrier.new(2)
+    local bar = barrier:new(2)
     local results = {frameSize = frameSize}
     
     

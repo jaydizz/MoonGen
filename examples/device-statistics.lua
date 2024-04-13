@@ -19,9 +19,9 @@ local log    = require "log"
 local ffi = require "ffi"
 
 -- set addresses here
-local DST_MAC     = nil -- resolved via ARP on GW_IP or DST_IP, can be overriden with a string here
-local SRC_IP_BASE = "10.0.0.10"
-local DST_IP      = "10.1.0.10"
+local DST_MAC     = "f8:f2:1e:46:2c:f0" -- resolved via ARP on GW_IP or DST_IP, can be overriden with a string here
+local SRC_IP_BASE = "10.0.0.1"
+local DST_IP      = "48.0.0.1"
 local SRC_PORT    = 1234
 local DST_PORT    = 319
 

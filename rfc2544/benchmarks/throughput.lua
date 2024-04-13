@@ -159,7 +159,7 @@ function benchmark:bench(frameSize)
     local pktLost = true
     local maxLinkRate = self.txQueues[1].dev:getLinkStatus().speed
     local rate, lastRate
-    local bar = barrier.new(2)
+    local bar = barrier:new(2)
     local results = {}
     local rateSum = 0
     local finished = false

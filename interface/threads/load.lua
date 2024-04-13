@@ -4,6 +4,7 @@ local memory  = require "memory"
 local mg      = require "moongen"
 local timer   = require "timer"
 local stats   = require "stats"
+local log = require "log"
 
 local Flow = require "flow"
 
@@ -21,13 +22,14 @@ end
 function thread.start(devices)
 	for _,flow in ipairs(thread.flows) do
 		local txQueue = devices:txQueue(flow:property "tx_dev")
-
 		-- setup rate limit
 		if flow:option "rate" then
 			if flow:option "ratePattern" == "cbr" then
 				local rc = dpdkc.rte_eth_set_queue_rate_limit(txQueue.id, txQueue.qid, flow:option "rate")
 				if rc ~= 0 then -- fallback to software ratelimiting
+					log:warn("Return: %s", rc)
 					txQueue = limiter:new(txQueue, "cbr", flow:getDelay())
+					log:warn("Using software rate-limit")
 				end
 			elseif flow.results.ratePattern == "poisson" then
 				txQueue = limiter:new(txQueue, "poisson", flow:getDelay())

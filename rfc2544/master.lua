@@ -87,7 +87,7 @@ function master(args)
     local duration = args.duration
     local maxLossRate = args.maxLossRate
     local dskip = args.dskip
-    local numIterations = args.iterations
+    local numIterations = args.numIterations
    
     if args.asksshpass == "true" then
         io.write("password: ")

@@ -173,7 +173,7 @@ function benchmark:bench(frameSize, rate)
 end
 
 function latencyLoadSlave(queue, port, frameSize, duration, modifier, bar)
-    local ethDst = arp.blockingLookup("198.18.1.1", 10)
+    local ethDst = "f8:f2:1e:46:2c:f0"
     --TODO: error on timeout
 
     -- gen payload template suggested by RFC2544
@@ -242,7 +242,7 @@ function latencyTimerSlave(txQueue, rxQueue, port, frameSize, duration, bar)
     --Timestamped packets must be > 80 bytes (+4crc)
     frameSize = frameSize > 84 and frameSize or 84
     
-    local ethDst = arp.blockingLookup("198.18.1.1", 10)
+    local ethDst = "f8:f2:1e:46:2c:f0"
     --TODO: error on timeout
         
     rxQueue.dev:filterTimestamps(rxQueue)

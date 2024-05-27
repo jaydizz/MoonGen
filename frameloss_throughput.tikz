@@ -1,0 +1,45 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[xlabel={offered load [mpps]}, ylabel={throughput [mpps]}, grid=both, ymin=0, xmin=0, scaled ticks=false, width=9cm, height=4cm, cycle list name=exotic,legend style={at={(1.02,1)},anchor=north west}]
+    \addplot coordinates {
+        (0.1002752, 0.1002752)
+        (9.345792, 5.7964116)
+        (0, 0)
+    };\addlegendentry {64 bytes}
+    \addplot coordinates {
+        (0.200384, 0.2003842)
+        (8.4334462, 5.7593324)
+        (0, 0)
+    };\addlegendentry {128 bytes}
+    \addplot coordinates {
+        (0.400256, 0.400256)
+        (4.5270144, 4.329148)
+        (0, 0)
+    };\addlegendentry {256 bytes}
+    \addplot coordinates {
+        (0.8011136, 0.8011138)
+        (2.3495168, 2.3483988)
+        (0, 0)
+    };\addlegendentry {512 bytes}
+    \addplot coordinates {
+        (1.1972352, 1.1972352)
+        (1.1974656, 1.1974656)
+        (0, 0)
+    };\addlegendentry {1024 bytes}
+    \addplot coordinates {
+        (0.9617024, 0.9617026)
+        (0.961344, 0.961344)
+        (0, 0)
+    };\addlegendentry {1280 bytes}
+    \addplot coordinates {
+        (0.8129152, 0.8129152)
+        (0.8129152, 0.8129152)
+        (0, 0)
+    };\addlegendentry {1518 bytes}
+\end{axis}
+\end{tikzpicture}
+\end{document}

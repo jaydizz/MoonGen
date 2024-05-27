@@ -61,7 +61,7 @@ function master(args)
     log:info("===========================")
     log:info("  Running Frameloss test   ")
     log:info("===========================")
-    local maxSpeed = txDev:getLinkStatus().speed
+    local maxrate = txDev:getLinkStatus().speed
     for _, framesize in ipairs(FRAME_SIZES) do
         local startRate = rateparser.parse_rate("0.1Mp/s", framesize)
         local endRate = rateparser.parse_rate(maxSpeed, framesize)
@@ -178,40 +178,26 @@ local function fillUdpPacket(buf, len)
 end
 
 function ctrSlave(txDev, rxDev, time, bar)
-	local initialRXStats = rxDev:getStats()
-	local initialRX       = initialRXStats.imissed + initialRXStats.ipackets
-	local initialTXStats = txDev:getStats()
-	local initialTX		 = initialTXStats.opackets
-	
-	local rxCtr = stats:newDevRxCounter(rxDev, "plain")
-	local txCtr = stats:newDevTxCounter(txDev, "plain")
-
-	-- runtime timer
+    local bufs = memory.bufArray()
     local runtime = nil
+    local pktCtr = stats:newPktRxCounter("Received Packets")
+    queue = rxDev:getRxQueue(0)
+	
+    -- runtime timer
     if ( time > 0 ) then
         runtime = timer:new(time)
     end
-	txCtr:update()
-	rxCtr:update()
 	bar:wait()
 	while mg.running() and (not runtime or runtime:running()) do
-		txCtr:update()
-		rxCtr:update()
-		local _, _, _, rxStats = rxCtr:getStats()
-		local _, _, _, txStats = txCtr:getStats()
+        local rx = queue:tryRecv(bufs, 100)
+        for i = 1, rx do
+            pktCtr:countPacket(bufs[i])
+        end
+        bufs:free(rx)
+        pktCtr:update()
 	end
+    pktCtr:finalize()
 	-- Wait for any packets in transit. 
-	txCtr:finalize(500)
-	rxCtr:finalize(500)
-	-- Get latest stats
-	local _, rxmbit, _, rxStats = rxCtr:getStats()
-	local _, txmbit, _, txStats = txCtr:getStats()
-	local actualRX = tonumber(rxStats - initialRX)
-	local actualTX = tonumber(txStats - initialTX)
-	if rxStats < txStats then
-		log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", actualRX, actualTX, (actualTX - actualRX), (actualTX - actualRX)/actualTX*100)
-
-	end
 	return txmbit, actualTX, actualRX
 
 end

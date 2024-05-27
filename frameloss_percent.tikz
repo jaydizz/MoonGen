@@ -1,0 +1,45 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[xlabel={link rate [\%]}, ylabel={frameloss [\%]}, grid=both, ymin=0, xmin=0, xmax=100,scaled ticks=false, width=9cm, height=4cm, cycle list name=exotic,legend style={at={(1.04,1)},anchor=north west}]
+    \addplot coordinates {
+        (0.10000068511768, 0)
+        (9.3679503383736, 37.978380002465)
+        (0, 0)
+    };\addlegendentry {64 bytes}
+    \addplot coordinates {
+        (0.40000390910203, -9.9808367933568e-05)
+        (16.869996490638, 31.708434921895)
+        (0, 0)
+    };\addlegendentry {128 bytes}
+    \addplot coordinates {
+        (1.6000130428405, 0)
+        (18.103237193279, 4.3707923703534)
+        (0, 0)
+    };\addlegendentry {256 bytes}
+    \addplot coordinates {
+        (6.4000405117203, -2.4965248374263e-05)
+        (18.797340752565, 0.047584252217307)
+        (0, 0)
+    };\addlegendentry {512 bytes}
+    \addplot coordinates {
+        (19.157543151137, 0)
+        (19.157549368272, 0)
+        (0, 0)
+    };\addlegendentry {1024 bytes}
+    \addplot coordinates {
+        (19.231247579072, -2.079645428773e-05)
+        (19.231190901495, 0)
+        (0, 0)
+    };\addlegendentry {1280 bytes}
+    \addplot coordinates {
+        (19.277706436716, 0)
+        (19.277675127291, 0)
+        (0, 0)
+    };\addlegendentry {1518 bytes}
+\end{axis}
+\end{tikzpicture}
+\end{document}

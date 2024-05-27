@@ -28,7 +28,7 @@ function configure(parser)
 	parser:argument("txDev", "Device to transmit from."):convert(tonumber)
 	parser:argument("rxDev", "Device to receive from."):convert(tonumber)
 	parser:option("-r --rate", "Transmit rate in Mbit/s."):default(10000):convert(tonumber)
-	parser:option("-f --flows", "Number of flows (randomized source IP)."):default(4):convert(tonumber)
+	parser:option("-f --flows", "Number of flows (randomized source IP)."):default(20):convert(tonumber)
 	parser:option("-s --size", "Packet size."):default(60):convert(tonumber)
 end
 
@@ -41,6 +41,8 @@ function master(args)
 	if args.rate > 0 then
 		txDev:getTxQueue(0):setRate(args.rate - (args.size + 4) * 8 / 1000)
 	end
+	stats.startStatsTask{txDevices = {txDev}, rxDevices= {rxDev}}
+
 	mg.startTask("loadSlave", txDev:getTxQueue(0), rxDev, args.size, args.flows)
 	mg.startTask("timerSlave", txDev:getTxQueue(1), rxDev:getRxQueue(1), args.size, args.flows)
 	arp.startArpTask{
@@ -50,6 +52,9 @@ function master(args)
 		{ rxQueue = txDev:getRxQueue(2), txQueue = txDev:getTxQueue(2), ips = ARP_IP }
 	}
 	mg.waitForTasks()
+	mg.startTask("timerSlave", txDev:getTxQueue(1), rxDev:getRxQueue(1), args.size, args.flows)
+
+
 end
 
 local function fillUdpPacket(buf, len)

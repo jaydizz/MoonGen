@@ -1,0 +1,28 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
+
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[ xlabel={packet size [byte]}, ylabel={rate [Gbit/s]}, grid=both, ymin=0, xmin=0, xtick={64,256,512,1024,1280,1518},scaled ticks=false, width=9cm, height=4cm, cycle list name=exotic,legend style={at={(0.99,0.02)},anchor=south east}]
+    \addplot coordinates {
+        (64, 9.9973415808)
+        (128, 9.9967900032)
+        (256, 9.9985729536)
+        (512, 10.0002091392)
+        (1024, 10.0001853504)
+        (1280, 9.26741088)
+        (1518, 10.000235952)
+    };\addlegendentry {throughput at max 100 \% packet loss}
+    \addplot coordinates {
+        (64, 10)
+        (128, 10)
+        (256, 10)
+        (512, 10)
+        (1024, 10)
+        (1280, 10)
+        (1518, 10)
+    };\addlegendentry {link rate}
+\end{axis}
+\end{tikzpicture}
+\end{document}

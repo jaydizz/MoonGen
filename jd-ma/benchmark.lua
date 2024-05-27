@@ -12,6 +12,7 @@ local dpdkc   = require "dpdkc"
 local limiter = require "software-ratecontrol"
 local timer = require "timer"
 local inspect = require('inspect')
+local rateparser = require "rateparser"
 
 -- set addresses here
 local DST_MAC		= "f8:f2:1e:46:2c:f0" -- resolved via ARP on GW_IP or DST_IP, can be overriden with a string here
@@ -33,80 +34,11 @@ function configure(parser)
 	parser:argument("txDev", "Device to transmit from."):convert(tonumber)
 	parser:argument("rxDev", "Device to receive from."):convert(tonumber)
 	parser:option("-r --rate", "Transmit rate in Mbit/s."):default(10000)
-	parser:option("-f --flows", "Number of flows (randomized source IP)."):default(4):convert(tonumber)
+	parser:option("-f --flows", "Number of flows (randomized source IP)."):default(20):convert(tonumber)
 	parser:option("-s --size", "Packet size."):default(60):convert(tonumber)
 	parser:option("-n --threads", "Number of Threads to use"):default(1):convert(tonumber)
 	parser:option("-t --time", "Time in seconds"):default(120):convert(tonumber)
-end
-local units = {}
-
-units.time = {
-        [""] = 1,
-        ms = 1 / 1000,
-        s  = 1,
-        m  = 60,
-        h  = 3600,
-}
-units.timeError  = "Invalid time unit. Can be one of 'ms', 's', 'm', 'h'."
-
-units.size = {
-        [""] = 1,
-        k = 10 ^ 3, ki = 2 ^ 10,
-        m = 10 ^ 6, mi = 2 ^ 20,
-        g = 10 ^ 9, gi = 2 ^ 30,
-}
-units.sizeError = "Invalid size unit. Can be <k|m|g>[i]<bit|b|p>"
-
-units.bool = {
-        ["0"] = false, ["1"] = true,
-        ["false"] = false, ["true"] = true,
-        ["no"] = false, ["yes"] = true,
-}
-units.boolError = "Invalid boolean. Can be one of (0|false|no) or (1|true|yes) respectively."
-
-function units.parseBool(bool, default, error)
-        local t = type(bool)
-
-        if t == "string" then
-                bool = units.bool[bool]
-                if not error:assert(type(bool) == "boolean", units.boolError) then
-                        return default
-                end
-        elseif t == "nil" then
-                return default
-        elseif t ~= "boolean" then
-                error("Invalid argument. String or boolean expected, got %s.", t)
-        end
-
-        return bool
-end
-
-
-function option.parse_rate(rstring, psize)
-        local num, unit, time = string.match(rstring, "^(%d+%.?%d*)(%a*)/?(%a*)$")
-        if not num then
-                return nil, "Invalid format. Should be '<number>[unit][/<time>]'."
-        end
-
-        num, unit, time = tonumber(num), string.lower(unit), units.time[time]
-        if not time then
-                return nil, units.timeError
-        end
-
-        if unit == "" then
-                unit = units.size.m --default is mbit/s
-        elseif string.find(unit, "bit$") then
-                unit = units.size[string.sub(unit, 1, -4)]
-        elseif string.find(unit, "b$") then
-                unit = units.size[string.sub(unit, 1, -2)] * 8
-        elseif string.find(unit, "p$") then
-                unit = units.size[string.sub(unit, 1, -2)] * psize * 8
-        else
-                return nil, units.sizeError
-        end
-
-        unit = unit / 10 ^ 6 -- cbr is in mbit/s
-        return num * unit / time
+	parser:option("-l --limiter", "Ratelimiter to use"):default("software")
 end
 
 function master(args)
@@ -120,7 +52,7 @@ function master(args)
 
 	-- setup rate-limiter... we have to rely on software ratelimiting here... sadly. 
 	-- max 1kpps timestamping traffic timestamping
-	local rate = parse_rate(args.rate, args.size)
+	local rate = rateparser.parse_rate(args.rate, args.size + 4 )
 	--txDev:setRate(rate)
 	log:warn("%s", rate)
 	--stats.startStatsTask{txDevices = {txDev}}
@@ -132,9 +64,9 @@ function master(args)
 	-- Since the hardware-rate-limiter fails for small packet rates, we will use a sofware-ratelimiter for these. 
 	for i = 1, args.threads do
 		local txQueue
-		if ( rate < 100 ) 
+		if ( rate < 500 or args.limiter == "software") 
 		then
-			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", 8000 * args.size / (rate / args.threads))
+			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", 8000 * (args.size + 4)/ (rate / args.threads))
 			log:info("Using Software Rate-Limiter")
 		else 
 			txDev:setRate(rate)
@@ -153,6 +85,16 @@ function master(args)
 	--	{ rxQueue = txDev:getRxQueue(2), txQueue = txDev:getTxQueue(2), ips = ARP_IP }
 	--}
 	mg.waitForTasks()
+	local rxStats = rxDev:getStats() 
+	log:info("ipacktes: " .. tostring(rxStats.ipackets))
+        log:info("opacktes: " .. tostring(rxStats.opackets))
+        log:info("ibytes: " .. tostring(rxStats.ibytes))
+        log:info("obytes: " .. tostring(rxStats.obytes))
+        log:info("imissed: " .. tostring(rxStats.imissed))
+        log:info("ierrors: " .. tostring(rxStats.ierrors))
+        log:info("oerrors: " .. tostring(rxStats.oerrors))
+        log:info("rx_nombuf: " .. tostring(rxStats.rx_nombuf))
+
 end
 
 local function fillUdpPacket(buf, len)
@@ -160,7 +102,7 @@ local function fillUdpPacket(buf, len)
 		ethSrc = queue,
 		ethDst = DST_MAC,
 		ip4Src = SRC_IP,
-		ip4Dst = DST_IP,
+		ip4Dst = "48.0.0.10",
 		udpSrc = SRC_PORT,
 		udpDst = DST_PORT,
 		pktLength = len
@@ -221,7 +163,7 @@ function loadSlave(queue, rxDev, size, flows, time)
         if ( time > 0 ) then
                 runtime = timer:new(time)
         end
-
+	--queue:start()
 	while mg.running() and ( not runtime or runtime:running()) do
 		bufs:alloc(size)
 		for i, buf in ipairs(bufs) do

@@ -197,12 +197,12 @@ function benchmark:bench(frameSize, maxLossRate)
 end
 
 function framelossLoadSlave(queue, port, frameSize, duration, modifier, bar)
-    local ethDst = arp.blockingLookup("198.18.1.1", 10)
+    --local ethDst = arp.blockingLookup("198.18.1.1", 10)
+    ethDst = "f8:f2:1e:6e:fb:e0"
     --TODO: error on timeout
 
     --wait for counter slave
     bar:wait()
-
     -- gen payload template suggested by RFC2544
     local udpPayloadLen = frameSize - 46
     local udpPayload = ffi.new("uint8_t[?]", udpPayloadLen)

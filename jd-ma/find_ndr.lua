@@ -13,6 +13,8 @@ local limiter = require "software-ratecontrol"
 local timer = require "timer"
 local inspect = require('inspect')
 local rateparser = require "rateparser"
+local barrier       = require "barrier"
+
 -- set addresses here
 local DST_MAC		= "f8:f2:1e:46:2c:f0" -- resolved via ARP on GW_IP or DST_IP, can be overriden with a string here
 local SRC_IP_BASE	= "10.0.0.10" -- actual address will be SRC_IP_BASE + random(0, flows)
@@ -44,49 +46,43 @@ end
 local size
 
 function master(args)
-	local low   = rateparser.parse_rate( args.rate, args.size    + 4  )
-	local high  = rateparser.parse_rate( args.endrate, args.size + 4  )
 	size = args.size
-	local testRate
+	local bar = barrier:new(2)
 	-- Setup Devices
 	txDev = device.config{port = args.txDev, rxQueues = 1 , txQueues = args.threads }
 	rxDev = device.config{port = args.rxDev, rxQueues = 1 , txQueues = args.threads }
 	-- Wait for links to come up.
 	device.waitForLinks()
-	
-	while not (high == low) do
-		log:info("=======================================")
-		log:info("Low: %s Mpps ( %s ), High: %s Mpps (%s)", wireRateMPPS(low), low, wireRateMPPS(high), high)
-		testRate = math.floor(low + (high - low)/2)
-		log:info("Testing rate %s Mpps (%s)", wireRateMPPS(testRate), testRate)
-		local actualRate, dropped = test(args, testRate)
-		log:info("Actual rate %s Mpps (%s)", wireRateMPPS(actualRate.median), actualRate.median)
-		        local rxStats = rxDev:getStats()
-		        local txStats = txDev:getStats()
-        	log:info("ipacktes: " .. tostring(rxStats.ipackets))
-	log:info("opacktes: " .. tostring(rxStats.opackets))
-	log:info("ibytes: " .. tostring(rxStats.ibytes))
-	log:info("obytes: " .. tostring(rxStats.obytes))
-	log:info("imissed: " .. tostring(rxStats.imissed))
-	log:info("ierrors: " .. tostring(rxStats.ierrors))
-	log:info("oerrors: " .. tostring(rxStats.oerrors))
-	log:info("rx_nombuf: " .. tostring(rxStats.rx_nombuf))
-			log:info("opacktes: " .. tostring(txStats.opackets))
+	local results = {}
+	local FRAME_SIZES   = {64, 128, 256, 512, 1024, 1280, 1518}
 
-		
-		if dropped then
-			log:warn("We dropped Packets! Taking Lower interval")
-			high = testRate
-		else
-			log:warn("We did not drop Packets! Taking Higher interval")
-			low = testRate + 1
+	for _, framesize in ipairs(FRAME_SIZES) do
+		log:info("Testing for Framesize %s", framesize)
+		local low   = rateparser.parse_rate( args.rate, framesize  )
+		local high  = rateparser.parse_rate( args.endrate, framesize  )
+		local testRate
+		local result
+
+		while not (high == low) do
+			log:info("=======================================")
+			log:info("Low: %s Mpps ( %s ), High: %s Mpps (%s)", wireRateMPPS(low), low, wireRateMPPS(high), high)
+			testRate = math.floor(low + (high - low)/2)
+			log:info("Testing rate %s Mpps (%s)", wireRateMPPS(testRate), testRate)
+			local actualRate, dropped = test(args, testRate, framesize, bar)
+			log:info("Actual rate %s Mpps (%s)", wireRateMPPS(actualRate.median), actualRate.median)
+			if dropped then
+				log:warn("We dropped Packets! Taking Lower interval")
+				high = testRate
+			else
+				log:warn("We did not drop Packets! Taking Higher interval")
+				low = testRate 
+			end
+			if ( low >= high ) then
+				log:info("No significant dropps occured within given Interval!")
+				break
+			end
 		end
-		if ( low > high ) then
-			log:info("No significant dropps occured within given Interval!")
-			break
-		end
-	end
-	
+	end 
 	log:info("Non Dropping Rate: %s Mpp/s, %s MBit/s", wireRateMPPS(testRate/ (8 * args.size + 4)), testRate)
 end
 
@@ -96,16 +92,17 @@ function wireRateMPPS(rate)
 end
 
 
-function test(args, rate)
+function test(args, rate, framesize, bar)
 	-- Start Counter Thread first to not miss any packets.
 	local percent = args.droprate/100
-	local counterTask = mg.startTask("ctrSlave", txDev, rxDev, args.time, percent)
+	bar:reinit(args.threads + 1) 
+	local counterTask = mg.startTask("ctrSlave", txDev, rxDev, args.time, percent, bar)
 	
 	-- Create Rate-limiters for each thread!
-	-- Since the hardware-rate-limiter fails for small packet rates, we will use a sofware-ratelimiter for these. 
+	-- Since the hardware-rate-limiter fails for small packet rates, we will use a sofware-ratelimiter for these.
 	for i = 1, args.threads do
 		local txQueue
-		if ( rate < 100) 
+		if ( rate < 100 or true) 
 		then
 			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", 8000 * (args.size + 4) / (rate / args.threads))
 			log:info("Using Software Rate-Limiter")
@@ -115,7 +112,7 @@ function test(args, rate)
 			log:info("Using HW Rate-Limiter")
 		end
 
-		mg.startTask("loadSlave", txQueue, rxDev, args.size, args.flows, args.time)
+		mg.startTask("loadSlave", txQueue, rxDev, framesize - 4, args.flows, args.time, bar)
 	end
 	mg.waitForTasks()
 	return counterTask:wait()
@@ -135,42 +132,46 @@ local function fillUdpPacket(buf, len)
 	}
 end
 
-function ctrSlave(txDev, rxDev, time, percent)
+function ctrSlave(txDev, rxDev, time, percent, bar)
+	local initialRXStats = rxDev:getStats()
+	local initialRX       = initialRXStats.imissed + initialRXStats.ipackets
+	local initialTXStats = txDev:getStats()
+	local initialTX		 = initialTXStats.opackets
+	
 	local rxCtr = stats:newDevRxCounter(rxDev, "plain")
 	local txCtr = stats:newDevTxCounter(txDev, "plain")
-	
-	--local _, _, _, rxStats = rxCtr:getStats()
-	--local _, _, _, txStats = txCtr:getStats()
-	--log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", rxStats, txStats, (txStats - rxStats), (txStats - rxStats)/txStats*100)
 
 	-- runtime timer
-        local runtime = nil
-        if ( time > 0 ) then
-                runtime = timer:new(time + 5)
-        end
+    local runtime = nil
+    if ( time > 0 ) then
+        runtime = timer:new(time)
+    end
+	txCtr:update()
+	rxCtr:update()
+	bar:wait()
 	while mg.running() and (not runtime or runtime:running()) do
 		txCtr:update()
 		rxCtr:update()
+		local _, _, _, rxStats = rxCtr:getStats()
+		local _, _, _, txStats = txCtr:getStats()
 	end
-
-	mg.sleepMillis(1000)
-		txCtr:update()
-		rxCtr:update()
 	-- Wait for any packets in transit. 
 	txCtr:finalize(500)
 	rxCtr:finalize(500)
 	-- Get latest stats
 	local _, _, _, rxStats = rxCtr:getStats()
 	local _, txmbit, _, txStats = txCtr:getStats()
+	local actualRX = tonumber(rxStats - initialRX)
+	local actualTX = tonumber(txStats - initialTX)
 	if rxStats < txStats then
-		log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", rxStats, txStats, (txStats - rxStats), (txStats - rxStats)/txStats*100)
+		log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", actualRX, actualTX, (actualTX - actualRX), (actualTX - actualRX)/actualTX*100)
 
 	end
-	return txmbit,  ( ((txStats - rxStats)/txStats) > percent)
+	return txmbit,  ( ((actualTX - actualRX)/actualTX) > percent)
 
 end
 
-function loadSlave(queue, rxDev, size, flows, time)
+function loadSlave(queue, rxDev, size, flows, time, bar)
 	local mempool = memory.createMemPool(function(buf)
 		fillUdpPacket(buf, size)
 	end)
@@ -182,8 +183,8 @@ function loadSlave(queue, rxDev, size, flows, time)
         if ( time > 0 ) then
                 runtime = timer:new(time)
         end
-	mg.sleepMillis(250) -- ensure counter task is up
-	queue:start()
+	--queue:start()
+	bar:wait() -- wait for counterTask
 	while mg.running() and ( not runtime or runtime:running()) do
 		bufs:alloc(size)
 		for i, buf in ipairs(bufs) do
@@ -195,11 +196,9 @@ function loadSlave(queue, rxDev, size, flows, time)
 		bufs:offloadUdpChecksums()
 		queue:send(bufs)
 	end
-	mg.sleepMillis(250)
 	if queue.stop then
                 queue:stop()
         end
-	mg.sleepMillis(250)
 
 end
 

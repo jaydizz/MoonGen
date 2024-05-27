@@ -7,7 +7,7 @@ Flow{"load-latency", Packet.Udp{
 		ip4Dst = ip"48.0.0.1",
 		udpSrc = 1234,
 		udpDst = 319,
-		pktLength = 1518
+		pktLength = 60
 	},
 	timestamp = true
 }

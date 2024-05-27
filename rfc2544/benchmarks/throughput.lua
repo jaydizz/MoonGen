@@ -43,6 +43,7 @@ function benchmark:init(arg)
     self.dut = arg.dut
 
     self.initialized = true
+    self.txDev = arg.txDev
 end
 
 function benchmark:config()
@@ -169,6 +170,7 @@ function benchmark:bench(frameSize)
         local port = UDP_PORT
         binSearch:init(0, maxLinkRate)
         rate = maxLinkRate -- start at maximum, so theres a chance at reaching maximum (otherwise only maximum - threshold can be reached)
+        printf("Rate: %s", rate)
         lastRate = rate
 
         printf("starting iteration %d for frameSize %d", iteration, frameSize)
@@ -178,19 +180,23 @@ function benchmark:bench(frameSize)
         while dpdk.running() do
             
             -- workaround for rate bug
-            local numQueues = rate > (64 * 64) / (84 * 84) * maxLinkRate and rate < maxLinkRate and 3 or 1
-            bar:reinit(numQueues + 1)
+            -- local numQueues = rate > (64 * 64) / (84 * 84) * maxLinkRate and rate < maxLinkRate and 3 or 1
+            local numQueues = 1
+            bar:reinit(2)
             if rate < maxLinkRate then
                 -- not maxLinkRate
                 -- eventual multiple slaves
                 -- set rate is payload rate not wire rate
                 for i=1, numQueues do
-                    printf("set queue %i to rate %d", i, rate * frameSize / (frameSize + 20) / numQueues)
-                    self.txQueues[i]:setRate(rate * frameSize / (frameSize + 20) / numQueues)
+                    printf("set queue %i to rate %d", i, rate * frameSize / (frameSize + 20))
+                    --self.txQueues[i]:setRate(rate * frameSize / (frameSize + 20) / numQueues)
+                    self.txDev:setRate(rate)
                 end
             else
                 -- maxLinkRate
-                self.txQueues[1]:setRate(rate)
+                --self.txQueues[1]:setRate(rate)
+                self.txDev:setRate(rate)
+		
             end
             
             local loadTasks = {}
@@ -247,7 +253,8 @@ function benchmark:bench(frameSize)
 end
 
 function throughputLoadSlave(queue, port, frameSize, duration, modifier, bar)
-    local ethDst = arp.blockingLookup("198.18.1.1", 10)
+    local ethDst = "f8:f2:1e:46:2c:f0"
+    --local ethDst = arp.blockingLookup("198.18.1.1", 10)
     --TODO: error on timeout
 
     --wait for counter slave

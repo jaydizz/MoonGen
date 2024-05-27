@@ -32,6 +32,7 @@ local GW_IP		= DST_IP
 local ARP_IP	= SRC_IP_BASE
 
 local FRAME_SIZES = {64, 128, 256, 512, 1024, 1280, 1518}
+--local FRAME_SIZES = {64}
 
 
 function configure(parser)
@@ -45,6 +46,7 @@ function configure(parser)
 	parser:option("-n --threads", "Number of Threads to use"):default(1):convert(tonumber)
 	parser:option("-t --time", "Time in seconds"):default(120):convert(tonumber)
 	parser:option("-l --limiter", "Ratelimiter to use"):default("hardware")
+	parser:option("-n --filename", "filename"):default("")
 end
 
 
@@ -57,28 +59,29 @@ function master(args)
 	-- Wait for links to come up.
 	device.waitForLinks()
 	local results = {}
-    local FRAME_SIZES   = {64, 128, 256, 512, 1024, 1280, 1518}
     log:info("===========================")
     log:info("  Running Frameloss test   ")
     log:info("===========================")
-    local maxrate = txDev:getLinkStatus().speed
+    local maxSpeed = txDev:getLinkStatus().speed
     for _, framesize in ipairs(FRAME_SIZES) do
         local startRate = rateparser.parse_rate("0.1Mp/s", framesize)
-        local endRate = rateparser.parse_rate(maxSpeed, framesize)
+        local endRate = rateparser.parse_rate(maxSpeed, framesize) * ( (framesize)/(framesize+20) )
         local result = {}
         for i=0, args.iterations - 1, 1 do
-            local testRate = startRate + i* ((maxSpeed - startRate)/(args.iterations - 1))
-            --testRate = 7168
-            log:info("framesize: %s, rate %s", framesize, testRate)
+            local testRate = startRate + i* ((endRate - startRate)/(args.iterations - 1))
+            log:info("framesize: %s, rate %s,  %s", framesize, testRate, endRate)
             local orate, tpkts, rpkts = test(args, testRate, framesize, bar)
             local elem = {}
             elem.framesize = framesize
-            elem.orate     = wireRateMPPS(orate.median)
+            elem.orate     = orate.median
             elem.tpkts     = tpkts
             elem.rpkts     = rpkts
+            elem.endrate   = endRate
             table.insert(result, elem)
-            log:info("%s",  resultToCSV(result, args))
-            mg.sleepMillis(1000)
+            log:info("%s",  resultToCSV(args.filename .. "_" .. framesize ,result, args))
+            mg.sleepMillis(5000)
+            --rxDev:stop()            
+            --rxDev = device.config{port = args.rxDev, rxQueues = 1 , txQueues = args.threads }
         end
         table.insert(results, result)
     end
@@ -90,7 +93,8 @@ function getCSVHeader()
     return str
 end
 
-function resultToCSV(result, args)
+function resultToCSV(filename, result, args)
+    local file = io.open("frameloss_" .. filename, 'w')
     local str = ""
     for k,v in ipairs(result) do
         str = str .. v.orate .. "," .. v.framesize .. "," .. args.time .. "," .. v.rpkts .. "," .. v.tpkts .. "," .. (v.tpkts - v.rpkts) / (v.tpkts) * 100
@@ -98,6 +102,8 @@ function resultToCSV(result, args)
             str = str .. "\n"
         end
     end
+    file:write(getCSVHeader())
+    file:write(str)
     return str
 end
 
@@ -116,16 +122,20 @@ function toTikz(filename, args, ...)
         for _, p in ipairs(result) do
             frameSize = p.framesize
             
-            fl:addPoint(p.orate, (p.tpkts - p.rpkts) / p.tpkts * 100)
+            
+            if (p.orate > p.endrate) then 
+                p.orate = p.endrate
+            end
+            fl:addPoint(p.orate/p.endrate * 100, (p.tpkts - p.rpkts) / p.tpkts * 100)
             
             local offeredLoad = p.tpkts / 10^6 / args.time
             local throughput = p.rpkts / 10^6 /  args.time
             th:addPoint(offeredLoad, throughput)
         end
-        fl:addPoint(0, 0)
+        --fl:addPoint(0, 0)
         fl:endPlot(frameSize .. " bytes")
         
-        th:addPoint(0, 0)
+        --th:addPoint(0, 0)
         th:endPlot(frameSize .. " bytes")
         
     end
@@ -178,26 +188,46 @@ local function fillUdpPacket(buf, len)
 end
 
 function ctrSlave(txDev, rxDev, time, bar)
-    local bufs = memory.bufArray()
+	local initialRXStats = rxDev:getStats()
+	local initialRX       = initialRXStats.imissed + initialRXStats.ipackets
+	local initialTXStats = txDev:getStats()
+	local initialTX		 = initialTXStats.opackets
+    log:info("%s", initialRX)
+	local rxCtr = stats:newDevRxCounter(rxDev, "plain")
+	local txCtr = stats:newDevTxCounter(txDev, "plain")
+
+	-- runtime timer
     local runtime = nil
-    local pktCtr = stats:newPktRxCounter("Received Packets")
-    queue = rxDev:getRxQueue(0)
-	
-    -- runtime timer
     if ( time > 0 ) then
         runtime = timer:new(time)
     end
+	txCtr:update()
+	rxCtr:update()
 	bar:wait()
 	while mg.running() and (not runtime or runtime:running()) do
-        local rx = queue:tryRecv(bufs, 100)
-        for i = 1, rx do
-            pktCtr:countPacket(bufs[i])
-        end
-        bufs:free(rx)
-        pktCtr:update()
+		txCtr:update()
+		rxCtr:update()
+		local _, _, _, rxStats = rxCtr:getStats()
+		local _, _, _, txStats = txCtr:getStats()
 	end
-    pktCtr:finalize()
 	-- Wait for any packets in transit. 
+	txCtr:finalize(500)
+	rxCtr:finalize(500)
+	-- Get latest stats
+	local _, rxmbit = rxCtr:getStats()
+	local _, txmbit = txCtr:getStats()
+	
+    local RXStats = rxDev:getStats()
+    local rxStats = RXStats.imissed + RXStats.ipackets
+    local TXStats = txDev:getStats()
+    local txStats = TXStats.opackets
+
+	local actualRX = tonumber(rxStats - initialRX)
+	local actualTX = tonumber(txStats - initialTX) + 1
+	if rxStats < txStats then
+		log:warn("In: %s, Out: %s, dropped %s ( %.2f %%) packets", actualRX, actualTX, (actualTX - actualRX), (actualTX - actualRX)/actualTX*100)
+
+	end
 	return txmbit, actualTX, actualRX
 
 end

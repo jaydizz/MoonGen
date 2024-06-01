@@ -188,6 +188,11 @@ function ctrSlave(txDev, rxDev, time, percent, bar)
 	txCtr:update()
 	rxCtr:update()
 	bar:wait()
+	mg.sleepMillis(1000) -- wait for DuT to settle
+	initialRXStats = rxDev:getStats()
+	initialRX       = initialRXStats.imissed + initialRXStats.ipackets
+	initialTXStats = txDev:getStats()
+	initialTX		 = initialTXStats.opackets
 	while mg.running() and (not runtime or runtime:running()) do
 		txCtr:update()
 		rxCtr:update()

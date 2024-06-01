@@ -82,7 +82,7 @@ function units.getDelay(cbr, framesize, threads)
 end
 
 function units.swToHwRate(rate, framesize)
-        return rate * ((framesize - 4)*8 - 20)/(framsize * 8)
+        return rate * ((framesize - 4)*8 - 20)/(framesize * 8)
 end
 
 return units

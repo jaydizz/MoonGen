@@ -32,6 +32,7 @@ local GW_IP		= DST_IP
 local ARP_IP	= SRC_IP_BASE
 
 local FRAME_SIZES = {64, 128, 256, 512, 1024, 1280, 1518}
+--local FRAME_SIZES = {1024, 1280, 1518}
 --local FRAME_SIZES = {64}
 
 
@@ -72,8 +73,16 @@ function master(args)
             log:info("framesize: %s, rate %s,  %s", framesize, testRate, endRate)
             local orate, tpkts, rpkts = test(args, testRate, framesize, bar)
             local elem = {}
+			-- account for rounding errors
+			if tonumber(rpkts)  > tonumber(tpkts) then
+				rpkts = tpkts
+			end
+			if (tonumber(orate.median) > tonumber(endRate)) then 
+				elem.orate = endRate
+			else 
+            	elem.orate = orate.median 
+			end
             elem.framesize = framesize
-            elem.orate     = orate.median
             elem.tpkts     = tpkts
             elem.rpkts     = rpkts
             elem.endrate   = endRate
@@ -89,7 +98,7 @@ function master(args)
 end
 
 function getCSVHeader()
-    local str = "percent of link rate,frame size,duration,received packets,sent packets,frameloss in %"
+    local str = "percent of link rate,frame size,duration,received packets,sent packets,frameloss in %\n"
     return str
 end
 
@@ -97,7 +106,13 @@ function resultToCSV(filename, result, args)
     local file = io.open("frameloss_" .. filename, 'w')
     local str = ""
     for k,v in ipairs(result) do
-        str = str .. v.orate .. "," .. v.framesize .. "," .. args.time .. "," .. v.rpkts .. "," .. v.tpkts .. "," .. (v.tpkts - v.rpkts) / (v.tpkts) * 100
+		if (v.rpkts > v.tpkts) then 
+			v.rpkts = v.tpkts
+		end
+		if (v.orate > v.endrate) then
+			v.orate = v.endrate
+		end
+        str = str .. (v.orate/v.endrate) * 100 .. "," .. v.framesize .. "," .. args.time .. "," .. v.rpkts .. "," .. v.tpkts .. "," .. (v.tpkts - v.rpkts) / (v.tpkts) * 100
         if result[k+1] then
             str = str .. "\n"
         end
@@ -145,7 +160,7 @@ end
 
 
 function wireRateMPPS(rate)
-	return rate/(8*(size + 4))
+	return rate/(8*(size))
 end
 
 function test(args, rate, framesize, bar)
@@ -159,9 +174,10 @@ function test(args, rate, framesize, bar)
 		local txQueue
 		if ( false )
 		then
-			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", 8000 * (args.size + 4) / (rate / args.threads))
+			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", rateparser.getDelay(rate, args.size, args.threads))
 			log:info("Using Software Rate-Limiter")
 		else 
+			rate = rateparser.swToHwRate(rate, framesize)
 			txDev:setRate(rate)
 			txQueue = txDev:getTxQueue(i - 1)
 			log:info("Using HW Rate-Limiter")

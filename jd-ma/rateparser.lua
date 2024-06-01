@@ -70,4 +70,20 @@ function units.parse_rate(rstring, psize)
         return num * unit / time
 end
 
+function units.getDelay(cbr, framesize, threads)
+        --local cbr = self.results.rate
+        if cbr then
+                cbr = cbr / threads
+                local psize = framesize -- True Framesize!
+                -- cbr      => mbit/s        => bit/1000ns
+                -- psize    => b/p           => 8bit/p
+                return 8000 * psize / cbr -- => ns/p
+        end
+end
+
+function units.swToHwRate(rate, framesize)
+        return rate * ((framesize - 4)*8 - 20)/(framsize * 8)
+
+
+
 return units

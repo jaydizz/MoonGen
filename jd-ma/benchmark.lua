@@ -52,7 +52,7 @@ function master(args)
 
 	-- setup rate-limiter... we have to rely on software ratelimiting here... sadly. 
 	-- max 1kpps timestamping traffic timestamping
-	local rate = rateparser.parse_rate(args.rate, args.size + 4 )
+	local rate = rateparser.parse_rate(args.rate, args.size)
 	--txDev:setRate(rate)
 	log:warn("%s", rate)
 	--stats.startStatsTask{txDevices = {txDev}}
@@ -64,17 +64,20 @@ function master(args)
 	-- Since the hardware-rate-limiter fails for small packet rates, we will use a sofware-ratelimiter for these. 
 	for i = 1, args.threads do
 		local txQueue
-		if ( rate < 500 or args.limiter == "software") 
+		if (args.limiter == "software") 
 		then
-			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", 8000 * (args.size + 4)/ (rate / args.threads))
+			txQueue = limiter:new(txDev:getTxQueue(i - 1), "cbr", rateparser.getDelay(rate, args.size, args.threads))
 			log:info("Using Software Rate-Limiter")
-		else 
+		else
+			-- tweak hardware bitrate! 
+			rate = rateparser.swToHwRate(rate, args.size)
+			log:info("HW-Rate: %s", rate)
 			txDev:setRate(rate)
 			txQueue = txDev:getTxQueue(i - 1)
 			log:info("Using HW Rate-Limiter")
 		end
 
-		mg.startTask("loadSlave", txQueue, rxDev, args.size, args.flows, args.time)
+		mg.startTask("loadSlave", txQueue, rxDev, args.size -4 , args.flows, args.time)
 	end
 
 	mg.startTask("timerSlave", txDev:getTxQueue( 2 ), rxDev:getRxQueue( 2 ), args.size, args.flows, args.time)
